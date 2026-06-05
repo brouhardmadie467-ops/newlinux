@@ -1,37 +1,16 @@
 {
   "name": "server-monitor",
   "version": "1.0.0",
-  "description": "A lightweight Linux server monitoring API with log analysis, auto patrol, and SSH batch execution",
+  "description": "Lightweight server monitoring API with log analysis and auto patrol",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js",
-    "test": "bash test/test_metrics.sh && bash test/test_logs.sh && bash test/test_patrol.sh"
-  },
-  "keywords": [
-    "nodejs",
-    "express",
-    "server-monitoring",
-    "system-metrics",
-    "api",
-    "linux",
-    "shell",
-    "automation",
-    "sqlite",
-    "log-analysis"
-  ],
-  "author": "Aiden",
-  "license": "MIT",
-  "engines": {
-    "node": ">=18.0.0"
+    "test": "bash test/test_metrics.sh && bash test/test_logs.sh"
   },
   "dependencies": {
     "express": "^5.1.0",
     "better-sqlite3": "^11.0.0"
   },
-  "repository": {
-    "type": "git",
-    "url": "."
-  },
-  "homepage": "https://github.com/superboyyy/server-monitor#readme"
+  "keywords": ["monitoring", "linux", "shell", "nodejs"],
+  "license": "MIT"
 }
