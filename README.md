@@ -1,8 +1,11 @@
+根据项目当前最新结构和改善建议，以下是更新后的 `README.md` 文件内容。与原来相比，更新了项目结构、环境变量说明、Node.js 版本要求、补充了日志轮转和测试脚本信息，并修正了部分细节描述（如 Git 仓库地址、安装说明）。所有原有核心章节（特性、快速开始、API 接口、服务管理、安装脚本使用、故障排除等）均完整保留并优化。
+
+```markdown
 <div align="center">
 
 # 🖥️ Server Monitor
 
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D14.0.0-brightgreen.svg)](https://nodejs.org/)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-linux-blue.svg)](https://www.linux.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
@@ -21,19 +24,20 @@ Real-time system performance metrics monitoring with clean RESTful API interface
 
 ## ✨ Features
 
-🚀 **Real-time Monitoring** - Monitor CPU, memory, disk usage and system load in real-time  
-📊 **RESTful API** - Clean HTTP API interface, easy to integrate  
-🌐 **CORS Support** - Built-in CORS support, frontend friendly  
-⚙️ **systemd Integration** - Support both system-level and user-level service installation  
-🔄 **Auto Restart** - Automatic restart on service failure, ensuring high availability  
-📝 **Logging** - Integrated with systemd logging system for easy debugging  
+🚀 **Real-time Monitoring** - Monitor CPU, memory, disk usage and system load in real-time
+📊 **RESTful API** - Clean HTTP API interface, easy to integrate
+🌐 **CORS Support** - Built-in CORS support, frontend friendly
+⚙️ **systemd Integration** - Support both system-level and user-level service installation
+🔄 **Auto Restart** - Automatic restart on service failure, ensuring high availability
+📝 **Logging** - Integrated with systemd logging system for easy debugging
+🚨 **Alerting** - Automatic alert logging when CPU or disk usage exceeds defined thresholds
 🐳 **Lightweight** - Minimal resource footprint, suitable for all environments
 
 ## 🚀 Quick Start
 
 ### System Requirements
 
-- **Node.js** v14.0.0 or higher
+- **Node.js** v18.0.0 or higher (required by Express 5)
 - **npm** package manager
 - **Linux** system (with systemd support)
 
@@ -46,7 +50,7 @@ Real-time system performance metrics monitoring with clean RESTful API interface
 git clone https://github.com/superboyyy/server-monitor.git
 cd server-monitor
 
-# Install dependencies
+# Install dependencies (optional, script will do it)
 npm install
 
 # User-level service installation (recommended, no sudo required)
@@ -315,6 +319,11 @@ echo "Load: ${load}"
 |----------|---------|-------------|
 | `PORT` | `3001` | Service listening port |
 | `NODE_ENV` | `production` | Runtime environment |
+| `ALERT_LOG` | `/tmp/server-monitor-alert.log` (user service) or `/var/log/server-monitor-alert.log` (system service) | Path to the alert log file |
+| `CPU_THRESHOLD` | `90` | CPU usage percentage that triggers an alert |
+| `DISK_THRESHOLD` | `90` | Disk usage percentage that triggers an alert |
+
+*The CPU and disk thresholds can be customized by setting these environment variables in the service file or at runtime.*
 
 ### Service Configuration
 
@@ -330,6 +339,9 @@ Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
 Environment=PORT=3001
+Environment=ALERT_LOG=/var/log/server-monitor-alert.log
+Environment=CPU_THRESHOLD=90
+Environment=DISK_THRESHOLD=90
 ```
 
 > **⚠️ Important Note**: You need to replace placeholders in the configuration file before use:
@@ -337,6 +349,35 @@ Environment=PORT=3001
 > - Replace `/path/to/server_monitor` with the actual project path
 > 
 > Or just use the installation script, it will handle these configurations automatically!
+
+### Alert Log Rotation
+
+To prevent alert logs from growing indefinitely, a log rotation script is provided:
+
+```bash
+# Execute manually
+./scripts/clean_alerts.sh
+
+# Or set up a daily cron job (run `crontab -e` and add the following line):
+0 2 * * * /path/to/server-monitor/scripts/clean_alerts.sh
+```
+
+This will back up the current alert log, clear the original, and delete archives older than 7 days.
+
+## 🧪 Testing
+
+The project includes an automated test script that verifies core functionality:
+
+```bash
+# Run the test script (requires curl and stress to be installed)
+./test/test_metrics.sh
+```
+
+The test will:
+- Start the service and check the API response
+- Simulate high CPU load (using `stress`) to verify alerting
+- Check the alert log for generated entries
+- Clean up temporary files and processes
 
 ## 🚨 Troubleshooting
 
@@ -413,21 +454,26 @@ server-monitor/
 ├── 📄 server.js                 # Main service file
 ├── ⚙️ server-monitor.service    # systemd service configuration
 ├── 🚀 install-service.sh        # Installation script
-├── 📦 package.json              # Project configuration file  
+├── 📦 package.json              # Project configuration
 ├── 🔒 package-lock.json         # Dependency lock file
-├── 📖 README.md                 # Project documentation (Chinese)
-├── 📖 README_EN.md              # Project documentation (English)
-└── 🙈 .gitignore                # Git ignore file
+├── 📖 README.md                 # English documentation
+├── 📖 README_CN.md              # Chinese documentation
+├── 📄 LICENSE                   # MIT license
+├── 🙈 .gitignore                # Git ignore rules
+├── 🧪 test/
+│   └── test_metrics.sh          # Automated test script
+└── 🛠️ scripts/
+    └── clean_alerts.sh          # Alert log rotation script
 ```
 
 ## 🛠️ Tech Stack
 
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| **Node.js** | ≥14.0.0 | Runtime environment |
+| **Node.js** | ≥18.0.0 | Runtime environment |
 | **Express.js** | ^5.1.0 | Web framework |
 | **systemd** | - | Service management |
-| **Shell Script** | - | Automated installation |
+| **Shell Script** | - | Automated installation & testing |
 
 ## 🤝 Contributing
 
@@ -467,3 +513,4 @@ If this project helps you, please give it a ⭐ Star!
 Made with ❤️ by [Aiden](https://github.com/superboyyy)
 
 </div>
+。
