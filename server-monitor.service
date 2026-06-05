@@ -1,0 +1,21 @@
+[Unit]
+Description=Server Monitor API Service
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+WorkingDirectory=/path/to/server_monitor
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=PORT=3001
+
+# 日志配置
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=server-monitor
+
+[Install]
+WantedBy=multi-user.target
