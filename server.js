@@ -1,111 +1,73 @@
-// server.js
 const express = require('express');
-const os = require('os');
-const { exec } = require('child_process');
+const { execSync } = require('child_process');  // 执行 Linux 命令
 const fs = require('fs');
-const app = express();
 
-// 允许跨域
+const app = express();
+const PORT = process.env.PORT || 3001;
+const ALERT_LOG = process.env.ALERT_LOG || '/tmp/server-monitor-alert.log';
+
+// 跨域设置（保留原样）
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Headers', 'Content-Type');
     next();
 });
 
-// 获取CPU使用率
+// ========== 指标采集（全部改为调用 Linux 原生命令） ==========
 function getCPUUsage() {
-    return new Promise((resolve) => {
-        // 读取/proc/stat获取系统CPU使用率
-        fs.readFile('/proc/stat', 'utf8', (err, data) => {
-            if (err) {
-                resolve(0);
-                return;
-            }
-            
-            const lines = data.split('\n');
-            const cpuLine = lines[0]; // 第一行是总CPU统计
-            const cpuTimes = cpuLine.split(/\s+/).slice(1).map(Number);
-            
-            // CPU时间：user, nice, system, idle, iowait, irq, softirq, steal
-            const [user, nice, system, idle, iowait, irq, softirq, steal] = cpuTimes;
-            
-            // 计算总时间和空闲时间
-            const totalTime = user + nice + system + idle + iowait + irq + softirq + steal;
-            const idleTime = idle + iowait;
-            
-            // 等待一段时间后再次读取
-            setTimeout(() => {
-                fs.readFile('/proc/stat', 'utf8', (err2, data2) => {
-                    if (err2) {
-                        resolve(0);
-                        return;
-                    }
-                    
-                    const lines2 = data2.split('\n');
-                    const cpuLine2 = lines2[0];
-                    const cpuTimes2 = cpuLine2.split(/\s+/).slice(1).map(Number);
-                    
-                    const [user2, nice2, system2, idle2, iowait2, irq2, softirq2, steal2] = cpuTimes2;
-                    const totalTime2 = user2 + nice2 + system2 + idle2 + iowait2 + irq2 + softirq2 + steal2;
-                    const idleTime2 = idle2 + iowait2;
-                    
-                    // 计算时间差
-                    const totalDiff = totalTime2 - totalTime;
-                    const idleDiff = idleTime2 - idleTime;
-                    
-                    // 计算CPU使用率
-                    const cpuPercent = totalDiff > 0 ? Math.round((1 - idleDiff / totalDiff) * 100) : 0;
-                    resolve(Math.max(0, Math.min(cpuPercent, 100)));
-                });
-            }, 100);
-        });
-    });
-}
-
-// 获取内存使用率
-function getMemoryUsage() {
-    const totalMem = os.totalmem();
-    const freeMem = os.freemem();
-    const usedMem = totalMem - freeMem;
-    return Math.round((usedMem / totalMem) * 100);
-}
-
-// 获取磁盘使用率
-function getDiskUsage() {
-    return new Promise((resolve) => {
-        exec("df -h / | awk 'NR==2{print $5}' | sed 's/%//'", (error, stdout) => {
-            if (error) {
-                resolve(0);
-            } else {
-                resolve(parseInt(stdout.trim()) || 0);
-            }
-        });
-    });
-}
-
-// 获取系统负载
-function getSystemLoad() {
-    const loads = os.loadavg();
-    return loads[0].toFixed(1); // 1分钟平均负载
-}
-
-// API端点
-app.get('/api/system/metrics', async (req, res) => {
     try {
-        const [cpu, disk] = await Promise.all([
-            getCPUUsage(),
-            getDiskUsage()
-        ]);
-        
-        const metrics = {
-            cpu: cpu,
-            memory: getMemoryUsage(),
-            disk: disk,
-            load: getSystemLoad(),
-            timestamp: new Date().toISOString()
-        };
-        
-        res.json(metrics);
+        // top -bn1 批量输出，grep 定位 '%Cpu(s):' 行，awk 将用户态 + 系统态百分比相加
+        const stdout = execSync("top -bn1 | grep '%Cpu(s):' | awk '{print $2 + $4}'").toString();
+        return parseFloat(stdout);
+    } catch {
+        return -1;
+    }
+}
+
+function getMemoryUsage() {
+    try {
+        // free -m 输出内存，grep Mem 提取 total 和 used 列
+        const memLine = execSync("free -m | grep Mem | awk '{print $2,$3}'").toString().trim();
+        const [total, used] = memLine.split(/\s+/).map(Number);
+        return total ? +((used / total) * 100).toFixed(1) : 0;
+    } catch {
+        return -1;
+    }
+}
+
+function getDiskUsage() {
+    // 原实现已经是命令，保持不变
+    try {
+        return parseInt(execSync("df -h / | awk 'NR==2{print $5}' | sed 's/%//'").toString().trim(), 10) || 0;
+    } catch {
+        return -1;
+    }
+}
+
+function getSystemLoad() {
+    try {
+        // 直接读 /proc/loadavg，取第一列（1分钟负载）
+        return execSync("cat /proc/loadavg | awk '{print $1}'").toString().trim();
+    } catch {
+        return 'N/A';
+    }
+}
+
+// 汇总指标
+function collectMetrics() {
+    return {
+        cpu: getCPUUsage(),
+        memory: getMemoryUsage(),
+        disk: getDiskUsage(),
+        load: getSystemLoad(),
+        timestamp: new Date().toISOString()
+    };
+}
+
+// ========== API 端点 ==========
+app.get('/api/system/metrics', (req, res) => {
+    try {
+        res.json(collectMetrics());
     } catch (error) {
         console.error('获取系统指标失败:', error);
         res.status(500).json({ error: '获取系统指标失败' });
@@ -113,7 +75,17 @@ app.get('/api/system/metrics', async (req, res) => {
 });
 
 // 启动服务器
-const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`系统监控API服务器运行在端口 ${PORT}`);
 });
+
+// ========== 阈值告警（每30秒检查一次） ==========
+setInterval(() => {
+    const m = collectMetrics();
+    if (m.cpu > 90 || m.disk > 90) {
+        const msg = `[${m.timestamp}] ALERT CPU=${m.cpu}% DISK=${m.disk}%\n`;
+        fs.appendFile(ALERT_LOG, msg, (err) => {
+            if (err) console.error('写入告警日志失败', err);
+        });
+    }
+}, 30000);
