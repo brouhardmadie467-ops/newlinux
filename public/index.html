@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>服务器监控仪表盘 - 实时版</title>
+
+    <!-- jQuery 3.7.1 -->
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <!-- Chart.js 4.4.0 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            color: #e0e0e0; min-height: 100vh; overflow-x: hidden;
+        }
+        body::before {
+            content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%;
+            background: radial-gradient(circle at 30% 20%, rgba(0,210,255,0.03) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 80%, rgba(58,123,213,0.03) 0%, transparent 50%);
+            pointer-events: none; z-index: 0;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; position: relative; z-index: 1; }
+
+        /* 顶部 */
+        .header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 20px 30px; background: rgba(255,255,255,0.04);
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border-radius: 16px; margin-bottom: 20px;
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .status-dot {
+            width: 12px; height: 12px; border-radius: 50%; background: #00ff88;
+            box-shadow: 0 0 10px #00ff88, 0 0 20px rgba(0,255,136,0.3);
+            animation: pulse-dot 2s infinite;
+        }
+        @keyframes pulse-dot {
+            0%,100% { box-shadow: 0 0 5px #00ff88, 0 0 20px rgba(0,255,136,0.3); }
+            50% { box-shadow: 0 0 15px #00ff88, 0 0 40px rgba(0,255,136,0.6); }
+        }
+        .header h1 {
+            font-size: 26px; font-weight: 700;
+            background: linear-gradient(90deg, #00d2ff, #3a7bd5, #00d2ff);
+            background-size: 200% 100%; -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent; background-clip: text;
+            animation: gradient-shift 3s ease infinite;
+        }
+        @keyframes gradient-shift { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+        .ws-status { font-size: 13px; padding: 8px 18px; border-radius: 20px; font-weight: 600; transition: all 0.3s; }
+        .ws-connected { background: rgba(0,255,136,0.12); color: #00ff88; border: 1px solid rgba(0,255,136,0.3); }
+        .ws-disconnected { background: rgba(255,71,87,0.12); color: #ff4757; border: 1px solid rgba(255,71,87,0.3); animation: blink-border 1s infinite; }
+        @keyframes blink-border { 0%,100% { border-color: rgba(255,71,87,0.3); } 50% { border-color: rgba(255,71,87,0.8); } }
+
+        /* 告警横幅 */
+        .alert-banner {
+            padding: 16px 24px; border-radius: 12px; margin-bottom: 20px;
+            display: none; font-weight: 600; font-size: 15px;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            animation: slideDown 0.4s ease;
+        }
+        .alert-banner.show { display: block; }
+        .alert-banner.critical { background: rgba(255,71,87,0.18); border: 1px solid #ff4757; color: #ff6b6b; }
+        .alert-banner.warning { background: rgba(255,165,2,0.18); border: 1px solid #ffa502; color: #ffa502; }
+        @keyframes slideDown { from { opacity:0; transform:translateY(-20px); } to { opacity:1; transform:translateY(0); } }
+
+        /* 卡片网格 */
+        .cards-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap: 20px; margin-bottom: 20px; }
+        .card {
+            background: rgba(255,255,255,0.04); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border-radius: 16px; padding: 24px; border: 1px solid rgba(255,255,255,0.08);
+            transition: transform 0.3s, box-shadow 0.3s; position: relative; overflow: hidden;
+        }
+        .card::before {
+            content: ''; position: absolute; top:0; left:20px; right:20px; height:2px;
+            border-radius:0 0 4px 4px; opacity:0.6;
+        }
+        .cpu-card::before  { background: linear-gradient(90deg, transparent, #ff6b6b, transparent); }
+        .mem-card::before  { background: linear-gradient(90deg, transparent, #ffd93d, transparent); }
+        .disk-card::before { background: linear-gradient(90deg, transparent, #6bcb77, transparent); }
+        .load-card::before { background: linear-gradient(90deg, transparent, #4d96ff, transparent); }
+        .card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
+        .card-title { font-size: 13px; color: #999; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 14px; }
+        .card-value { font-size: 44px; font-weight: 700; margin-bottom: 10px; line-height: 1; }
+        .cpu-color  { color: #ff6b6b; } .mem-color { color: #ffd93d; }
+        .disk-color { color: #6bcb77; } .load-color { color: #4d96ff; }
+        .card-chart { height: 90px; position: relative; }
+
+        /* 图表区域 */
+        .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px,1fr)); gap: 20px; margin-bottom: 20px; }
+        .chart-card {
+            background: rgba(255,255,255,0.04); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border-radius: 16px; padding: 24px; border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+        }
+        .chart-card h3 { font-size: 15px; color: #aaa; margin-bottom: 16px; letter-spacing: 1px; }
+        .chart-container { position: relative; height: 250px; }
+        .chart-container canvas { width: 100% !important; height: 100% !important; }
+
+        /* SSH 表格 */
+        .ssh-table { width: 100%; border-collapse: collapse; }
+        .ssh-table th, .ssh-table td { padding: 12px 16px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .ssh-table th { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; }
+        .ssh-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+        .ssh-table code { background: rgba(255,255,255,0.06); padding: 3px 10px; border-radius: 4px; font-family: monospace; font-size: 13px; }
+        .badge { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+        .badge-danger  { background: rgba(255,107,107,0.2); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.3); }
+        .badge-warning { background: rgba(255,217,61,0.2); color: #ffd93d; border: 1px solid rgba(255,217,61,0.3); }
+        .badge-success { background: rgba(107,203,119,0.2); color: #6bcb77; border: 1px solid rgba(107,203,119,0.3); }
+        .oom-number { font-size: 72px; font-weight: 700; color: #ff6b6b; text-shadow: 0 0 30px rgba(255,107,107,0.3); }
+        .oom-label { color: #888; margin-top: 8px; font-size: 14px; }
+        .no-data { text-align: center; color: #555; padding: 20px; font-size: 14px; }
+
+        @media (max-width: 900px) {
+            .charts-grid { grid-template-columns: 1fr; }
+            .cards-grid { grid-template-columns: 1fr 1fr; }
+            .card-value { font-size: 32px; }
+            .header h1 { font-size: 20px; }
+        }
+        @media (max-width: 500px) {
+            .cards-grid { grid-template-columns: 1fr; }
+            .container { padding: 10px; }
+            .card { padding: 16px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- 顶部 -->
+    <div class="header">
+        <div class="header-left">
+            <span class="status-dot" id="statusDot"></span>
+            <h1>🖥️ 服务器实时监控仪表盘</h1>
+        </div>
+        <span class="ws-status ws-disconnected" id="wsStatus">● 未连接</span>
+    </div>
+
+    <!-- 告警横幅 -->
+    <div class="alert-banner" id="alertBanner"></div>
+
+    <!-- 4 个指标卡片 -->
+    <div class="cards-grid">
+        <!-- CPU -->
+        <div class="card cpu-card">
+            <div class="card-title">🖥️ CPU 使用率</div>
+            <div class="card-value cpu-color" id="cpuValue">--</div>
+            <div class="card-chart"><canvas id="cpuGauge"></canvas></div>
+        </div>
+        <!-- 内存 -->
+        <div class="card mem-card">
+            <div class="card-title">🧠 内存使用率</div>
+            <div class="card-value mem-color" id="memValue">--</div>
+            <div class="card-chart"><canvas id="memGauge"></canvas></div>
+        </div>
+        <!-- 磁盘 -->
+        <div class="card disk-card">
+            <div class="card-title">💾 磁盘使用率</div>
+            <div class="card-value disk-color" id="diskValue">--</div>
+            <div class="card-chart"><canvas id="diskGauge"></canvas></div>
+        </div>
+        <!-- 负载 -->
+        <div class="card load-card">
+            <div class="card-title">⚡ 系统负载 (1分钟)</div>
+            <div class="card-value load-color" id="loadValue">--</div>
+            <div class="card-chart"><canvas id="loadGauge"></canvas></div>
+        </div>
+    </div>
+
+    <!-- 趋势图 -->
+    <div class="charts-grid">
+        <div class="chart-card">
+            <h3>📈 CPU 实时趋势（最近 60 秒）</h3>
+            <div class="chart-container"><canvas id="cpuHistoryChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+            <h3>📊 内存实时趋势（最近 60 秒）</h3>
+            <div class="chart-container"><canvas id="memHistoryChart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- 日志分析 -->
+    <div class="charts-grid">
+        <div class="chart-card">
+            <h3>🔒 SSH 暴力破解 Top 5</h3>
+            <table class="ssh-table">
+                <thead><tr><th>IP 地址</th><th>尝试次数</th><th>风险等级</th></tr></thead>
+                <tbody id="sshTableBody"><tr><td colspan="3" class="no-data">⏳ 加载中...</td></tr></tbody>
+            </table>
+        </div>
+        <div class="chart-card">
+            <h3>💥 系统 OOM 事件</h3>
+            <div style="text-align:center;padding:20px;">
+                <div class="oom-number" id="oomCount">--</div>
+                <div class="oom-label">Out of Memory 事件计数</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+$(function() {
+
+    // ========== 配置 ==========
+    var WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+    var MAX_HISTORY = 60;          // 趋势图保留最近 60 秒数据
+    var LOGS_REFRESH_MS = 30000;   // 日志每 30 秒刷新
+
+    // ========== 全局变量 ==========
+    var ws = null;
+    var reconnectTimer = null;
+    var cpuHistoryArr = [], memHistoryArr = [], timeLabelsArr = [];
+    var cpuHistoryChart = null, memHistoryChart = null;
+    // 存储四个环形图实例（复用，不销毁）
+    var gaugeCharts = {};
+
+    // ========== DOM 缓存 ==========
+    var $cpuValue = $('#cpuValue'), $memValue = $('#memValue'),
+        $diskValue = $('#diskValue'), $loadValue = $('#loadValue'),
+        $wsStatus = $('#wsStatus'), $statusDot = $('#statusDot'),
+        $alertBanner = $('#alertBanner'), $sshBody = $('#sshTableBody'),
+        $oomCount = $('#oomCount');
+
+    // ========== 工具 ==========
+    function formatTime(isoStr) {
+        var d = new Date(isoStr);
+        return [d.getHours(), d.getMinutes(), d.getSeconds()]
+            .map(function(v) { return v.toString().padStart(2,'0'); }).join(':');
+    }
+    function getRiskBadge(n) {
+        if (n >= 100) return '<span class="badge badge-danger">🔴 高危</span>';
+        if (n >= 10)  return '<span class="badge badge-warning">🟡 可疑</span>';
+        return '<span class="badge badge-success">🟢 低风险</span>';
+    }
+
+    // ========== 初始化四个环形图（只执行一次） ==========
+    function initGauges() {
+        var commonOptions = {
+            responsive: true,
+            maintainAspectRatio: true,
+            cutout: '78%',
+            animation: { duration: 300, easing: 'easeOutQuart' },
+            plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false }
+            }
+        };
+        // 中心文字插件（读取最新 data 的第一个值）
+        var centerTextPlugin = {
+            id: 'gaugeCenterText',
+            afterDraw: function(chart) {
+                var val = chart.data.datasets[0].data[0];
+                if (val === undefined) return;
+                var ctx = chart.ctx;
+                var w = chart.width, h = chart.height;
+                ctx.save();
+                ctx.font = 'bold 14px "Segoe UI", "Microsoft YaHei"';
+                ctx.fillStyle = '#ccc';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(val.toFixed(1) + '%', w/2, h/2);
+                ctx.restore();
+            }
+        };
+
+        // 创建四个 chart
+        ['cpuGauge','memGauge','diskGauge','loadGauge'].forEach(function(id, idx) {
+            var canvas = document.getElementById(id);
+            if (!canvas) return;
+            var colors = ['#ff6b6b','#ffd93d','#6bcb77','#4d96ff'];
+            gaugeCharts[id] = new Chart(canvas, {
+                type: 'doughnut',
+                data: {
+                    datasets: [{
+                        data: [0, 100],  // 初始值
+                        backgroundColor: [colors[idx], 'rgba(255,255,255,0.08)'],
+                        borderWidth: 0,
+                        borderRadius: 6
+                    }]
+                },
+                options: commonOptions,
+                plugins: [centerTextPlugin]
+            });
+        });
+    }
+
+    // ========== 更新环形图数据（复用实例） ==========
+    function updateGaugeData(chart, value, maxValue) {
+        if (!chart) return;
+        var pct = Math.min((value / maxValue) * 100, 100);
+        if (isNaN(pct)) pct = 0;
+        chart.data.datasets[0].data = [pct, 100 - pct];
+        chart.update();
+    }
+
+    // ========== 初始化趋势图 ==========
+    function initHistoryCharts() {
+        var lineOptions = function(color) {
+            return {
+                responsive: true, maintainAspectRatio: false,
+                animation: false,  // 无动画，避免跳跃
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: { labels: { color: '#999', font:{size:11}, usePointStyle:true } }
+                },
+                scales: {
+                    x: { ticks: { color: '#666', maxTicksLimit:8, font:{size:10} }, grid: { color:'rgba(255,255,255,0.04)' } },
+                    y: { min:0, max:100, ticks: { color:'#666', callback:function(v){return v+'%'}, stepSize:20 }, grid: { color:'rgba(255,255,255,0.04)' } }
+                }
+            };
+        };
+        cpuHistoryChart = new Chart($('#cpuHistoryChart')[0], {
+            type: 'line',
+            data: { labels:[], datasets:[{ label:'CPU', data:[], borderColor:'#ff6b6b', backgroundColor:'rgba(255,107,107,0.08)', borderWidth:2, fill:true, tension:0.35, pointRadius:0 }] },
+            options: lineOptions()
+        });
+        memHistoryChart = new Chart($('#memHistoryChart')[0], {
+            type: 'line',
+            data: { labels:[], datasets:[{ label:'内存', data:[], borderColor:'#ffd93d', backgroundColor:'rgba(255,217,61,0.08)', borderWidth:2, fill:true, tension:0.35, pointRadius:0 }] },
+            options: lineOptions()
+        });
+    }
+
+    // ========== 追加趋势数据 ==========
+    function appendHistory(cpu, mem, timestamp) {
+        cpuHistoryArr.push(cpu); memHistoryArr.push(mem);
+        timeLabelsArr.push(formatTime(timestamp));
+        while (cpuHistoryArr.length > MAX_HISTORY) {
+            cpuHistoryArr.shift(); memHistoryArr.shift(); timeLabelsArr.shift();
+        }
+        if (cpuHistoryChart) {
+            cpuHistoryChart.data.labels = timeLabelsArr.slice();
+            cpuHistoryChart.data.datasets[0].data = cpuHistoryArr.slice();
+            cpuHistoryChart.update('none');
+        }
+        if (memHistoryChart) {
+            memHistoryChart.data.labels = timeLabelsArr.slice();
+            memHistoryChart.data.datasets[0].data = memHistoryArr.slice();
+            memHistoryChart.update('none');
+        }
+    }
+
+    // ========== 收到指标后更新所有 UI ==========
+    function updateMetricsUI(data) {
+        $cpuValue.text(data.cpu.toFixed(1) + '%');
+        $memValue.text(data.memory.toFixed(1) + '%');
+        $diskValue.text(data.disk.toFixed(1) + '%');
+        $loadValue.text(data.load);
+
+        // 更新环形图（复用实例）
+        updateGaugeData(gaugeCharts['cpuGauge'], data.cpu, 100);
+        updateGaugeData(gaugeCharts['memGauge'], data.memory, 100);
+        updateGaugeData(gaugeCharts['diskGauge'], data.disk, 100);
+        var loadNum = parseFloat(data.load) || 0;
+        updateGaugeData(gaugeCharts['loadGauge'], Math.min(loadNum * 25, 100), 100);
+
+        // 趋势图
+        appendHistory(data.cpu, data.memory, data.timestamp);
+
+        // 前端告警检查
+        checkAlert(data.cpu, data.disk);
+    }
+
+    // ========== 告警判断 ==========
+    function checkAlert(cpu, disk) {
+        var level='', msg='';
+        if (cpu > 90) { level='critical'; msg='🚨 CPU使用率 '+cpu.toFixed(1)+'%，超过90%！'; }
+        else if (disk > 90) { level='critical'; msg='🚨 磁盘使用率 '+disk.toFixed(1)+'%，超过90%！'; }
+        else if (cpu > 70) { level='warning'; msg='⚠️ CPU使用率 '+cpu.toFixed(1)+'%，超过70%'; }
+        else if (disk > 80) { level='warning'; msg='⚠️ 磁盘使用率 '+disk.toFixed(1)+'%，超过80%'; }
+
+        if (level) {
+            $alertBanner.attr('class', 'alert-banner show '+level).text(msg);
+        } else {
+            $alertBanner.attr('class', 'alert-banner').text('');
+        }
+    }
+    function showBackendAlert(level, msg) {
+        $alertBanner.attr('class', 'alert-banner show '+level).text(msg);
+        setTimeout(function() {
+            if ($alertBanner.text() === msg) $alertBanner.attr('class', 'alert-banner').text('');
+        }, 5000);
+    }
+
+    // ========== WebSocket ==========
+    function connectWS() {
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+        console.log('[WS] 连接中...', WS_URL);
+        try {
+            ws = new WebSocket(WS_URL);
+        } catch(e) { console.error(e); scheduleReconnect(); return; }
+
+        ws.onopen = function() {
+            console.log('[WS] ✅ 已连接');
+            $wsStatus.removeClass('ws-disconnected').addClass('ws-connected').text('● 实时已连接');
+            $statusDot.css({background:'#00ff88', boxShadow:'0 0 10px #00ff88'});
+            if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+        };
+        ws.onmessage = function(e) {
+            try {
+                var msg = JSON.parse(e.data);
+                if (msg.type === 'metrics') updateMetricsUI(msg.data);
+                else if (msg.type === 'alert') showBackendAlert(msg.level, msg.message);
+            } catch(err) { console.error(err); }
+        };
+        ws.onclose = function() {
+            console.log('[WS] ❌ 断开');
+            $wsStatus.removeClass('ws-connected').addClass('ws-disconnected').text('● 已断开 (3秒后重连)');
+            $statusDot.css({background:'#ff4757', boxShadow:'0 0 10px #ff4757'});
+            ws = null;
+            scheduleReconnect();
+        };
+        ws.onerror = function(err) { console.error('[WS] 错误', err); };
+    }
+    function scheduleReconnect() {
+        if (reconnectTimer) return;
+        reconnectTimer = setTimeout(function() { reconnectTimer = null; connectWS(); }, 3000);
+    }
+
+    // ========== 日志分析 HTTP API ==========
+    function fetchLogs() {
+        $.getJSON('/api/logs/analysis')
+            .done(function(data) {
+                if (data.ssh_failures && data.ssh_failures.length) {
+                    var rows = '';
+                    $.each(data.ssh_failures, function(i, item) {
+                        rows += '<tr><td><code>'+$('<div>').text(item.ip).html()+'</code></td>'+
+                                '<td><strong>'+item.attempts+'</strong> 次</td>'+
+                                '<td>'+getRiskBadge(item.attempts)+'</td></tr>';
+                    });
+                    $sshBody.html(rows);
+                } else {
+                    $sshBody.html('<tr><td colspan="3" class="no-data">✅ 未检测到攻击</td></tr>');
+                }
+                $oomCount.text(data.oom_events || 0);
+            })
+            .fail(function() {
+                $sshBody.html('<tr><td colspan="3" class="no-data">⚠️ 加载失败</td></tr>');
+            });
+    }
+
+    // ========== 启动 ==========
+    function init() {
+        initGauges();          // 创建四个环形图（只一次）
+        initHistoryCharts();   // 创建趋势图
+        connectWS();           // 连接 WebSocket
+        fetchLogs();           // 首次日志
+        setInterval(fetchLogs, LOGS_REFRESH_MS);
+        console.log('✅ 实时仪表盘就绪');
+    }
+
+    $(window).on('beforeunload', function() {
+        if (ws) ws.close();
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+    });
+
+    init();
+});
+</script>
+</body>
+</html>

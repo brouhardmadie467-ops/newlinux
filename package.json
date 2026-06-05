@@ -8,9 +8,15 @@
     "test": "bash test/test_metrics.sh && bash test/test_logs.sh"
   },
   "dependencies": {
+    "better-sqlite3": "^11.0.0",
     "express": "^5.1.0",
-    "better-sqlite3": "^11.0.0"
+    "ws": "^8.21.0"
   },
-  "keywords": ["monitoring", "linux", "shell", "nodejs"],
+  "keywords": [
+    "monitoring",
+    "linux",
+    "shell",
+    "nodejs"
+  ],
   "license": "MIT"
 }
